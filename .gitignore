@@ -1,0 +1,11 @@
+target/
+project
+*target*
+*/target/
+*class
+*jar*
+.*.swp
+.idea*
+.idea
+*.iml
+src/main/java/main.scala
