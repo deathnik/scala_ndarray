@@ -2,15 +2,15 @@ import scala.collection.{LinearSeq, mutable}
 import shapeless.ops.hlist.Length
 import shapeless.{Generic, Nat, HList}
 
-class NDShape(shape: List[Int], var indexesMult: List[Int], var accessFunction: LinearSeq[Int] => LinearSeq[Int], var margins: List[Int]) {
-  def this(shape: List[Int], indexesMult: List[Int], accessFunction: LinearSeq[Int] => LinearSeq[Int]) = this(shape, indexesMult, accessFunction, shape.map(_ => 0))
+class NDShape(shape: LinearSeq[Int], var indexesMult: LinearSeq[Int], var accessFunction: LinearSeq[Int] => LinearSeq[Int], var margins: LinearSeq[Int]) {
+  def this(shape: LinearSeq[Int], indexesMult: LinearSeq[Int], accessFunction: LinearSeq[Int] => LinearSeq[Int]) = this(shape, indexesMult, accessFunction, shape.map(_ => 0))
 
-  def apply[T <: LinearSeq[Int]](indexes: T): Int = {
+  def apply(indexes: LinearSeq[Int]): Int = {
     if (shape.zip(indexes).exists(x => x._2 >= x._1) || indexes.length != shape.length) throw new ArrayIndexOutOfBoundsException
     accessFunction(indexes).zip(margins).zip(indexesMult).map(x => (x._1._1 + x._1._2) * x._2).sum
   }
 
-  def slice(left: List[Int], right: List[Int]): NDShape =
+  def slice(left: LinearSeq[Int], right: LinearSeq[Int]): NDShape =
     new NDShape(right zip left map (x => x._1 - x._2), indexesMult, accessFunction, margins zip left map (x => x._1 + x._2))
 
   def transpose(): NDShape =
@@ -39,11 +39,11 @@ object NDArray {
   def apply[T, P <: Product, L <: HList, N <: Nat](data: Array[T], p: P)
                                                   (implicit gen: Generic.Aux[P, L],
                                                    len: Length.Aux[L, N],
-                                                   ev: shapeless.ops.hlist.ToList[L, Int])=
+                                                   ev: shapeless.ops.hlist.ToList[L, Int]) =
     new NDArray[T, N](data, gen.to(p).toList[Int](ev))
 
 
-  def getIndexesMult(lst: List[Int]): List[Int] = lst match {
+  def getIndexesMult(lst: LinearSeq[Int]): List[Int] = lst match {
     case Nil => Nil
     case x :: Nil => 1 :: Nil
     case x :: y => {
@@ -60,14 +60,14 @@ class NDArray[T, N <: Nat](data: Array[T], var shape: NDShape) extends Iterable[
 
   def iterator = shape.ordering() map (x => data(x))
 
-  def slice(left: List[Int], right: List[Int]): NDArray[T, N] =
+  def slice(left: LinearSeq[Int], right: LinearSeq[Int]): NDArray[T, N] =
     new NDArray[T, N](data, shape.slice(left, right))
 
   def t(): NDArray[T, N] =
     new NDArray[T, N](data, shape.transpose())
 
 
-  def this(data: Array[T], lst: List[Int]) =
+  def this(data: Array[T], lst: LinearSeq[Int]) =
     this(data, new NDShape(lst, NDArray.getIndexesMult(lst), x => x))
 
 }
