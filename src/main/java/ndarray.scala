@@ -1,5 +1,6 @@
 import scala.collection.{LinearSeq, mutable}
-
+import shapeless.ops.hlist.Length
+import shapeless.{Generic, Nat, HList}
 
 class NDShape(shape: List[Int], var indexesMult: List[Int], var accessFunction: LinearSeq[Int] => LinearSeq[Int], var margins: List[Int]) {
   def this(shape: List[Int], indexesMult: List[Int], accessFunction: LinearSeq[Int] => LinearSeq[Int]) = this(shape, indexesMult, accessFunction, shape.map(_ => 0))
@@ -34,6 +35,14 @@ class NDShape(shape: List[Int], var indexesMult: List[Int], var accessFunction: 
 }
 
 object NDArray {
+  //constructor  from tuples or from HList
+  def apply[T, P <: Product, L <: HList, N <: Nat](data: Array[T], p: P)
+                                                  (implicit gen: Generic.Aux[P, L],
+                                                   len: Length.Aux[L, N],
+                                                   ev: shapeless.ops.hlist.ToList[L, Int])=
+    new NDArray[T, N](data, gen.to(p).toList[Int](ev))
+
+
   def getIndexesMult(lst: List[Int]): List[Int] = lst match {
     case Nil => Nil
     case x :: Nil => 1 :: Nil
@@ -44,18 +53,18 @@ object NDArray {
   }
 }
 
-class NDArray[T](data: Array[T], var shape: NDShape) extends Iterable[T] {
+class NDArray[T, N <: Nat](data: Array[T], var shape: NDShape) extends Iterable[T] {
   def apply(ind: LinearSeq[Int]) = data(shape(ind))
 
   def update(ind: LinearSeq[Int], v: T) = data(shape(ind)) = v
 
   def iterator = shape.ordering() map (x => data(x))
 
-  def slice(left: List[Int], right: List[Int]): NDArray[T] =
-    new NDArray[T](data, shape.slice(left, right))
+  def slice(left: List[Int], right: List[Int]): NDArray[T, N] =
+    new NDArray[T, N](data, shape.slice(left, right))
 
-  def t(): NDArray[T] =
-    new NDArray[T](data, shape.transpose())
+  def t(): NDArray[T, N] =
+    new NDArray[T, N](data, shape.transpose())
 
 
   def this(data: Array[T], lst: List[Int]) =
