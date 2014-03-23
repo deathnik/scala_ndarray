@@ -1,13 +1,20 @@
-import scala.collection.{LinearSeq, mutable}
+import scala.collection.{LinearSeq,mutable}
 import shapeless.ops.hlist.Length
 import shapeless.{Generic, Nat, HList}
+
 
 class NDShape(shape: LinearSeq[Int], var indexesMult: LinearSeq[Int], var accessFunction: LinearSeq[Int] => LinearSeq[Int], var margins: LinearSeq[Int]) {
   def this(shape: LinearSeq[Int], indexesMult: LinearSeq[Int], accessFunction: LinearSeq[Int] => LinearSeq[Int]) = this(shape, indexesMult, accessFunction, shape.map(_ => 0))
 
-  def apply(indexes: LinearSeq[Int]): Int = {
-    if (shape.zip(indexes).exists(x => x._2 >= x._1) || indexes.length != shape.length) throw new ArrayIndexOutOfBoundsException
-    accessFunction(indexes).zip(margins).zip(indexesMult).map(x => (x._1._1 + x._1._2) * x._2).sum
+  def apply(ind: LinearSeq[Int]): Int = {
+    val indexes = accessFunction(ind)
+    if (indexes.length != shape.length) throw new IndexOutOfBoundsException("Wrong dimensions number: " + indexes.length + " != " + shape.length)
+    var sum = 0
+    for (i <- 0 to indexes.length - 1) {
+      if (ind(i) >= shape(i)) throw new IndexOutOfBoundsException(ind + " not in " + shape)
+      sum += (indexes(i) + margins(i)) * indexesMult(i)
+    }
+    sum
   }
 
   def slice(left: LinearSeq[Int], right: LinearSeq[Int]): NDShape =
@@ -23,16 +30,21 @@ class NDShape(shape: LinearSeq[Int], var indexesMult: LinearSeq[Int], var access
   def elementsIndexes(indexes: mutable.MutableList[Int]): Iterator[Int] = {
     val cur = this(indexes)
     val len = indexes.length
-    val last = (1 to len).toStream.takeWhile(x => indexes(len - x) + 1 >= shape(len - x))
-    last.foreach(x => indexes(len - x) = 0)
-    if (last.length == len) Iterator.single(cur)
-    else {
-      indexes(len - last.length - 1) += 1
-      lazy val v = Iterator.single(cur) ++ elementsIndexes(indexes)
-      v
+    for (i <- 1 to len) {
+      if (indexes(len - i) + 1 < shape(len - i)) {
+        indexes(len - i) = indexes(len - i) + 1
+        lazy val v = Iterator.single(cur) ++ elementsIndexes(indexes)
+        return v
+      }
+      else {
+        indexes(len - i) = 0
+      }
     }
+    Iterator.single(cur)
   }
+
 }
+
 
 object NDArray {
   //constructor  from tuples or from HList
@@ -41,7 +53,6 @@ object NDArray {
                                                    len: Length.Aux[L, N],
                                                    ev: shapeless.ops.hlist.ToList[L, Int]) =
     new NDArray[T, N](data, gen.to(p).toList[Int](ev))
-
 
   def getIndexesMult(lst: LinearSeq[Int]): List[Int] = lst match {
     case Nil => Nil
@@ -52,6 +63,7 @@ object NDArray {
     }
   }
 }
+
 
 class NDArray[T, N <: Nat](data: Array[T], var shape: NDShape) extends Iterable[T] {
   def apply(ind: LinearSeq[Int]) = data(shape(ind))
