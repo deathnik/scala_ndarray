@@ -1,10 +1,61 @@
-import scala.collection.{LinearSeq,mutable}
+import scala.collection.{mutable, LinearSeq}
 import shapeless.ops.hlist.Length
 import shapeless.{Generic, Nat, HList}
 
+object NDFlags {
+  def apply() = new NDFlags()
 
-class NDShape(shape: LinearSeq[Int], var indexesMult: LinearSeq[Int], var accessFunction: LinearSeq[Int] => LinearSeq[Int], var margins: LinearSeq[Int]) {
-  def this(shape: LinearSeq[Int], indexesMult: LinearSeq[Int], accessFunction: LinearSeq[Int] => LinearSeq[Int]) = this(shape, indexesMult, accessFunction, shape.map(_ => 0))
+  def apply(hs: mutable.HashSet[String]) = new NDFlags()
+}
+
+class NDFlags(container: mutable.HashSet[String]) {
+  def this() = this(new mutable.HashSet[String]())
+
+  def apply(f: NDFlag): Boolean = container.contains(f.str)
+
+  def +=(f: NDFlag) = {
+    container.add(f.str)
+    this
+  }
+
+  //inplace
+  def |(f: NDFlag) = this += f
+
+  def +(f: NDFlag) = NDFlags(container.clone()) += f
+
+  def +(fls: NDFlags) = NDFlags(container | fls.getContent)
+
+
+  def -=(f: NDFlag) = {
+    container.remove(f.str)
+    this
+  }
+
+  def -(f: NDFlag) = NDFlags(container.clone()) -= f
+
+  def -(fls: NDFlags) = NDFlags(container &~ fls.getContent)
+
+  def getContent = container
+
+  override def clone = NDFlags(container.clone())
+}
+
+trait NDFlag {
+  def str: String
+}
+
+case object BORROWS_DATA extends NDFlag {
+  def str: String = "bd"
+}
+
+case object ACCESS_MODIFIED extends NDFlag {
+  def str: String = "am"
+}
+
+
+class NDShape(shape: LinearSeq[Int], var indexesMult: LinearSeq[Int], var accessFunction: LinearSeq[Int] => LinearSeq[Int],
+              var margins: LinearSeq[Int], var flags: NDFlags) {
+  def this(shape: LinearSeq[Int], indexesMult: LinearSeq[Int], accessFunction: LinearSeq[Int] => LinearSeq[Int]) = this(shape, indexesMult, accessFunction, shape.map(_ => 0), new NDFlags())
 
   def apply(ind: LinearSeq[Int]): Int = {
     val indexes = accessFunction(ind)
@@ -18,10 +69,10 @@ class NDShape(shape: LinearSeq[Int], var indexesMult: LinearSeq[Int], var access
   }
 
   def slice(left: LinearSeq[Int], right: LinearSeq[Int]): NDShape =
-    new NDShape(right zip left map (x => x._1 - x._2), indexesMult, accessFunction, margins zip left map (x => x._1 + x._2))
+    new NDShape(right zip left map (x => x._1 - x._2), indexesMult, accessFunction, margins zip left map (x => x._1 + x._2), flags.clone | BORROWS_DATA)
 
   def transpose(): NDShape =
-    new NDShape(shape.reverse, indexesMult, x => accessFunction(x.reverse), margins)
+    new NDShape(shape.reverse, indexesMult, x => accessFunction(x.reverse), margins, flags | BORROWS_DATA | ACCESS_MODIFIED)
 
 
   def ordering(): Iterator[Int] = elementsIndexes(mutable.MutableList(shape.map(x => 0): _*))
@@ -57,10 +108,9 @@ object NDArray {
   def getIndexesMult(lst: LinearSeq[Int]): List[Int] = lst match {
     case Nil => Nil
     case x :: Nil => 1 :: Nil
-    case x :: y => {
+    case x :: y =>
       val sz = getIndexesMult(y)
       y.head * sz.head :: sz
-    }
   }
 }
 
