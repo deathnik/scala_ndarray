@@ -7,11 +7,19 @@
     <groupId>groupId</groupId>
     <artifactId>scala_ndarray</artifactId>
     <version>0.01-SNAPSHOT</version>
+
     <dependencies>
         <dependency>
             <groupId>com.chuusai</groupId>
             <artifactId>shapeless_2.10.3</artifactId>
             <version>2.0.0-M1</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.scalatest</groupId>
+            <artifactId>scalatest_2.10</artifactId>
+            <version>2.1.0</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 

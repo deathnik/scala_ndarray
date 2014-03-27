@@ -1,3 +1,4 @@
+package ndarray
 import scala.collection.{mutable, LinearSeq}
 import shapeless.ops.hlist.Length
 import shapeless.{Generic, Nat, HList}
@@ -11,6 +12,7 @@ object NDFlags {
 class NDFlags(container: mutable.HashSet[String]) {
   def this() = this(new mutable.HashSet[String]())
 
+  //contains
   def apply(f: NDFlag): Boolean = container.contains(f.str)
 
   def +=(f: NDFlag) = {
@@ -57,6 +59,11 @@ class NDShape(shape: LinearSeq[Int], var indexesMult: LinearSeq[Int], var access
               var margins: LinearSeq[Int], var flags: NDFlags) {
   def this(shape: LinearSeq[Int], indexesMult: LinearSeq[Int], accessFunction: LinearSeq[Int] => LinearSeq[Int]) = this(shape, indexesMult, accessFunction, shape.map(_ => 0), new NDFlags())
 
+  /*
+    checks whether all elements of l1 greater or equal of those in l2
+  * */
+  private def allGE(l1: LinearSeq[Int], l2: LinearSeq[Int]) = l1.zip(l2).forall( x => x._1 >= x._2)
+
   def apply(ind: LinearSeq[Int]): Int = {
     val indexes = accessFunction(ind)
     if (indexes.length != shape.length) throw new IndexOutOfBoundsException("Wrong dimensions number: " + indexes.length + " != " + shape.length)
@@ -68,8 +75,11 @@ class NDShape(shape: LinearSeq[Int], var indexesMult: LinearSeq[Int], var access
     sum
   }
 
-  def slice(left: LinearSeq[Int], right: LinearSeq[Int]): NDShape =
+  def slice(left: LinearSeq[Int], right: LinearSeq[Int]): NDShape ={
+    if( !allGE(shape,right) || !left.forall( _ >= 0) || !allGE(right,left))
+      throw new IndexOutOfBoundsException("Could not prepare slice" + left + "  " + right + " for shape " + shape)
     new NDShape(right zip left map (x => x._1 - x._2), indexesMult, accessFunction, margins zip left map (x => x._1 + x._2), flags.clone | BORROWS_DATA)
+  }
 
   def transpose(): NDShape =
     new NDShape(shape.reverse, indexesMult, x => accessFunction(x.reverse), margins, flags | BORROWS_DATA | ACCESS_MODIFIED)
@@ -94,11 +104,13 @@ class NDShape(shape: LinearSeq[Int], var indexesMult: LinearSeq[Int], var access
     Iterator.single(cur)
   }
 
+  def flaggedWith(f: NDFlag) = flags(f)
+
 }
 
 
 object NDArray {
-  //constructor  from tuples or from HList
+  //constructor  from tuples or from HList. shapeless.Nat._ should be imported
   def apply[T, P <: Product, L <: HList, N <: Nat](data: Array[T], p: P)
                                                   (implicit gen: Generic.Aux[P, L],
                                                    len: Length.Aux[L, N],
@@ -120,7 +132,7 @@ class NDArray[T, N <: Nat](data: Array[T], var shape: NDShape) extends Iterable[
 
   def update(ind: LinearSeq[Int], v: T) = data(shape(ind)) = v
 
-  def iterator = shape.ordering() map (x => data(x))
+  def iterator = if(! flaggedWith(BORROWS_DATA)) data.iterator else shape.ordering() map (x => data(x))
 
   def slice(left: LinearSeq[Int], right: LinearSeq[Int]): NDArray[T, N] =
     new NDArray[T, N](data, shape.slice(left, right))
@@ -128,8 +140,10 @@ class NDArray[T, N <: Nat](data: Array[T], var shape: NDShape) extends Iterable[
   def t(): NDArray[T, N] =
     new NDArray[T, N](data, shape.transpose())
 
+  def flaggedWith(f:NDFlag) = shape.flaggedWith(f)
 
   def this(data: Array[T], lst: LinearSeq[Int]) =
     this(data, new NDShape(lst, NDArray.getIndexesMult(lst), x => x))
 
+  def sh = shape
 }
