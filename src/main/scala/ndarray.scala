@@ -1,4 +1,5 @@
 package ndarray
+
 import scala.collection.{mutable, LinearSeq}
 import shapeless.ops.hlist.Length
 import shapeless.{Generic, Nat, HList}
@@ -62,7 +63,26 @@ class NDShape(shape: LinearSeq[Int], var indexesMult: LinearSeq[Int], var access
   /*
     checks whether all elements of l1 greater or equal of those in l2
   * */
-  private def allGE(l1: LinearSeq[Int], l2: LinearSeq[Int]) = l1.zip(l2).forall( x => x._1 >= x._2)
+  private def allGE(l1: LinearSeq[Int], l2: LinearSeq[Int]) = l1.zip(l2).forall(x => x._1 >= x._2)
+
+  /*
+    helper. swaps two elements of list
+  * */
+  private def swapElements[N](input: LinearSeq[N], i1: Int, i2: Int) = {
+    val l, m, r = input.genericBuilder[N]
+    var i = -1
+    var el1, el2: N = null.asInstanceOf[N]
+    for (x <- input) {
+      i += 1
+      if (i == i1) el1 = x
+      else if (i == i2) el2 = x
+      else
+        (if (i < i1) l else if (i1 < i && i < i2) m else r) += x
+    }
+    l += el2
+    m += el1
+    l.result() ++ m.result() ++ r.result()
+  }
 
   def apply(ind: LinearSeq[Int]): Int = {
     val indexes = accessFunction(ind)
@@ -75,10 +95,21 @@ class NDShape(shape: LinearSeq[Int], var indexesMult: LinearSeq[Int], var access
     sum
   }
 
-  def slice(left: LinearSeq[Int], right: LinearSeq[Int]): NDShape ={
-    if( !allGE(shape,right) || !left.forall( _ >= 0) || !allGE(right,left))
+  def slice(left: LinearSeq[Int], right: LinearSeq[Int]): NDShape = {
+    if (!allGE(shape, right) || !left.forall(_ >= 0) || !allGE(right, left))
       throw new IndexOutOfBoundsException("Could not prepare slice" + left + "  " + right + " for shape " + shape)
     new NDShape(right zip left map (x => x._1 - x._2), indexesMult, accessFunction, margins zip left map (x => x._1 + x._2), flags.clone | BORROWS_DATA)
+  }
+
+  def swapaxes(a1: Int, a2: Int): NDShape = {
+    if (a1 > shape.length || a2 > shape.length)
+      throw new IndexOutOfBoundsException("Couldn't swap axes " + a1 + " and " + a2 + " while shape is " + shape)
+    if (a1 < a2)
+      new NDShape(swapElements(shape, a1, a2), swapElements(indexesMult, a1, a2), accessFunction,
+        swapElements(margins, a1, a2), flags.clone | BORROWS_DATA)
+    else
+      new NDShape(swapElements(shape, a2, a1), swapElements(indexesMult, a2, a1), accessFunction,
+        swapElements(margins, a2, a1), flags.clone | BORROWS_DATA)
   }
 
   def transpose(): NDShape =
@@ -132,18 +163,21 @@ class NDArray[T, N <: Nat](data: Array[T], var shape: NDShape) extends Iterable[
 
   def update(ind: LinearSeq[Int], v: T) = data(shape(ind)) = v
 
-  def iterator = if(! flaggedWith(BORROWS_DATA)) data.iterator else shape.ordering() map (x => data(x))
+  def iterator = if (!flaggedWith(BORROWS_DATA)) data.iterator else shape.ordering() map (x => data(x))
 
   def slice(left: LinearSeq[Int], right: LinearSeq[Int]): NDArray[T, N] =
     new NDArray[T, N](data, shape.slice(left, right))
 
+  def swapaxes(a1: Int, a2: Int) = new NDArray[T, N](data, shape.swapaxes(a1, a2))
+
   def t(): NDArray[T, N] =
     new NDArray[T, N](data, shape.transpose())
 
-  def flaggedWith(f:NDFlag) = shape.flaggedWith(f)
+  def flaggedWith(f: NDFlag) = shape.flaggedWith(f)
 
   def this(data: Array[T], lst: LinearSeq[Int]) =
     this(data, new NDShape(lst, NDArray.getIndexesMult(lst), x => x))
 
+  // to be deleted later
   def sh = shape
 }
