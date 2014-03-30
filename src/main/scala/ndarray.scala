@@ -3,6 +3,9 @@ package ndarray
 import scala.collection.{mutable, LinearSeq}
 import shapeless.ops.hlist.Length
 import shapeless.{Generic, Nat, HList}
+import Nat._
+import scala.collection.mutable.ArrayBuffer
+import scala.reflect.ClassTag
 
 object NDFlags {
   def apply() = new NDFlags()
@@ -47,7 +50,7 @@ trait NDFlag {
   def str: String
 }
 
-//this is view
+//view indicator
 case object BORROWS_DATA extends NDFlag {
   def str: String = "bd"
 }
@@ -59,7 +62,7 @@ case object ACCESS_MODIFIED extends NDFlag {
 
 //indicates that contiguous access to  data-array  violated
 //this flag will cause O(n) cost and full data copying for some operations(ravel etcv)
-case object NON_CONTIGUOUS extends NDFlag{
+case object NON_CONTIGUOUS extends NDFlag {
   def str: String = "nc"
 }
 
@@ -150,10 +153,10 @@ class NDShape(shape: LinearSeq[Int], var indexesMult: LinearSeq[Int], var access
 
 object NDArray {
   //constructor  from tuples or from HList. shapeless.Nat._ should be imported
-  def apply[T, P <: Product, L <: HList, N <: Nat](data: Array[T], p: P)
-                                                  (implicit gen: Generic.Aux[P, L],
-                                                   len: Length.Aux[L, N],
-                                                   ev: shapeless.ops.hlist.ToList[L, Int]) =
+  def apply[T: ClassTag, P <: Product, L <: HList, N <: Nat](data: Array[T], p: P)
+                                                            (implicit gen: Generic.Aux[P, L],
+                                                             len: Length.Aux[L, N],
+                                                             ev: shapeless.ops.hlist.ToList[L, Int]) =
     new NDArray[T, N](data, gen.to(p).toList[Int](ev))
 
   def getIndexesMult(lst: LinearSeq[Int]): List[Int] = lst match {
@@ -166,17 +169,30 @@ object NDArray {
 }
 
 
-class NDArray[T, N <: Nat](data: Array[T], var shape: NDShape) extends Iterable[T] {
+class NDArray[T: ClassTag, N <: Nat](data: Array[T], var shape: NDShape) extends Iterable[T] {
+
+  private def contentOrderedCopy() = new ArrayBuffer[T]() ++= iterator
+
   def apply(ind: LinearSeq[Int]) = data(shape(ind))
 
   def update(ind: LinearSeq[Int], v: T) = data(shape(ind)) = v
 
-  def iterator = if (!flaggedWith(NON_CONTIGUOUS)) data.iterator else shape.ordering() map (x => data(x))
+  def iterator() = if (!flaggedWith(NON_CONTIGUOUS)) data.iterator else shape.ordering() map (x => data(x))
 
   def slice(left: LinearSeq[Int], right: LinearSeq[Int]): NDArray[T, N] =
     new NDArray[T, N](data, shape.slice(left, right))
 
   def swapaxes(a1: Int, a2: Int) = new NDArray[T, N](data, shape.swapaxes(a1, a2))
+
+  def ravel(): NDArray[T, _1] = {
+    if (!flaggedWith(NON_CONTIGUOUS)) {
+      new NDArray[T, _1](data, new NDShape(List(data.length), List(1), x => x, List(0), shape.flags.clone | BORROWS_DATA))
+    }
+    else {
+      val copy = contentOrderedCopy()
+      new NDArray[T, _1](copy.toArray, List(copy.length))
+    }
+  }
 
   def t(): NDArray[T, N] =
     new NDArray[T, N](data, shape.transpose())
