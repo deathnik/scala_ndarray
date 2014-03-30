@@ -47,12 +47,20 @@ trait NDFlag {
   def str: String
 }
 
+//this is view
 case object BORROWS_DATA extends NDFlag {
   def str: String = "bd"
 }
 
+//accessFunction not x => x
 case object ACCESS_MODIFIED extends NDFlag {
   def str: String = "am"
+}
+
+//indicates that contiguous access to  data-array  violated
+//this flag will cause O(n) cost and full data copying for some operations(ravel etcv)
+case object NON_CONTIGUOUS extends NDFlag{
+  def str: String = "nc"
 }
 
 
@@ -98,7 +106,7 @@ class NDShape(shape: LinearSeq[Int], var indexesMult: LinearSeq[Int], var access
   def slice(left: LinearSeq[Int], right: LinearSeq[Int]): NDShape = {
     if (!allGE(shape, right) || !left.forall(_ >= 0) || !allGE(right, left))
       throw new IndexOutOfBoundsException("Could not prepare slice" + left + "  " + right + " for shape " + shape)
-    new NDShape(right zip left map (x => x._1 - x._2), indexesMult, accessFunction, margins zip left map (x => x._1 + x._2), flags.clone | BORROWS_DATA)
+    new NDShape(right zip left map (x => x._1 - x._2), indexesMult, accessFunction, margins zip left map (x => x._1 + x._2), flags.clone | BORROWS_DATA | NON_CONTIGUOUS)
   }
 
   def swapaxes(a1: Int, a2: Int): NDShape = {
@@ -106,14 +114,14 @@ class NDShape(shape: LinearSeq[Int], var indexesMult: LinearSeq[Int], var access
       throw new IndexOutOfBoundsException("Couldn't swap axes " + a1 + " and " + a2 + " while shape is " + shape)
     if (a1 < a2)
       new NDShape(swapElements(shape, a1, a2), swapElements(indexesMult, a1, a2), accessFunction,
-        swapElements(margins, a1, a2), flags.clone | BORROWS_DATA)
+        swapElements(margins, a1, a2), flags.clone | BORROWS_DATA | NON_CONTIGUOUS)
     else
       new NDShape(swapElements(shape, a2, a1), swapElements(indexesMult, a2, a1), accessFunction,
-        swapElements(margins, a2, a1), flags.clone | BORROWS_DATA)
+        swapElements(margins, a2, a1), flags.clone | BORROWS_DATA | NON_CONTIGUOUS)
   }
 
   def transpose(): NDShape =
-    new NDShape(shape.reverse, indexesMult, x => accessFunction(x.reverse), margins, flags | BORROWS_DATA | ACCESS_MODIFIED)
+    new NDShape(shape.reverse, indexesMult, x => accessFunction(x.reverse), margins, flags | BORROWS_DATA | ACCESS_MODIFIED | NON_CONTIGUOUS)
 
 
   def ordering(): Iterator[Int] = elementsIndexes(mutable.MutableList(shape.map(x => 0): _*))
@@ -163,7 +171,7 @@ class NDArray[T, N <: Nat](data: Array[T], var shape: NDShape) extends Iterable[
 
   def update(ind: LinearSeq[Int], v: T) = data(shape(ind)) = v
 
-  def iterator = if (!flaggedWith(BORROWS_DATA)) data.iterator else shape.ordering() map (x => data(x))
+  def iterator = if (!flaggedWith(NON_CONTIGUOUS)) data.iterator else shape.ordering() map (x => data(x))
 
   def slice(left: LinearSeq[Int], right: LinearSeq[Int]): NDArray[T, N] =
     new NDArray[T, N](data, shape.slice(left, right))
